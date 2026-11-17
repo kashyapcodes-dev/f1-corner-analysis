@@ -13,7 +13,6 @@ dependencies = [
 [project.optional-dependencies]
 # Optional: richer/longer history (2018+), no rate limits. Needs F1TV Access subscription.
 fastf1 = ["fastf1>=3.9"]
-dev = ["pytest"]
 
 [build-system]
 requires = ["hatchling"]
@@ -26,3 +25,30 @@ packages = ["src/f1corner"]
 testpaths = ["tests/unit"]
 markers = ["live: hits real APIs (OpenF1; FastF1 also needs F1TV creds). Run with: pytest tests/live"]
 pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+target-version = "py314" # Sets the baseline for pyupgrade ("UP") rules
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501", "B905"]  # formatter owns line length
+
+[tool.poe.tasks]
+fix = [
+    { cmd = "ruff check --fix ." },
+    { cmd = "ruff format ." },
+]
+check = [
+    { cmd = "ruff check ." },
+    { cmd = "ruff format --check ." },
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "pre-commit",
+    "poethepoet>=0.49.0",
+]

@@ -1,4 +1,5 @@
 """Offline unit tests for OpenF1 payload -> canonical mapping (tiny synthetic data, no network)."""
+
 import pandas as pd
 import pytest
 
@@ -14,70 +15,172 @@ def ts(sec):
 
 
 def rc_row(sec, category="Flag", flag=None, scope=None, sector=None, message=""):
-    return dict(date=ts(sec), category=category, flag=flag, scope=scope, sector=sector, message=message)
+    return dict(
+        date=ts(sec), category=category, flag=flag, scope=scope, sector=sector, message=message
+    )
 
 
-DRIVERS = pd.DataFrame([dict(driver_number=1, name_acronym="VER", team_name="Red Bull Racing"),
-                        dict(driver_number=4, name_acronym="NOR", team_name="McLaren")])
+DRIVERS = pd.DataFrame(
+    [
+        dict(driver_number=1, name_acronym="VER", team_name="Red Bull Racing"),
+        dict(driver_number=4, name_acronym="NOR", team_name="McLaren"),
+    ]
+)
 
 
 def test_deleted_laps_parses_both_message_forms():
-    rc = pd.DataFrame([
-        rc_row(1, "Other", message="CAR 10 (GAS) TIME 1:38.777 DELETED - TRACK LIMITS AT TURN 1 LAP 4 16:03:24"),
-        rc_row(2, "Other", message="CAR 31 (OCO) LAP DELETED - TRACK LIMITS AT TURN 10 LAP 14 16:18:11 (PIT)"),
-        rc_row(3, "Other", message="RISK OF RAIN FOR F1 QUALIFYING SESSION IS 20%"),
-    ])
+    rc = pd.DataFrame(
+        [
+            rc_row(
+                1,
+                "Other",
+                message="CAR 10 (GAS) TIME 1:38.777 DELETED - TRACK LIMITS AT TURN 1 LAP 4 16:03:24",
+            ),
+            rc_row(
+                2,
+                "Other",
+                message="CAR 31 (OCO) LAP DELETED - TRACK LIMITS AT TURN 10 LAP 14 16:18:11 (PIT)",
+            ),
+            rc_row(3, "Other", message="RISK OF RAIN FOR F1 QUALIFYING SESSION IS 20%"),
+        ]
+    )
     assert o.deleted_laps(rc) == {("OCO", 14)}
     assert o.deleted_times(rc) == {("GAS", 98777)}
 
 
 def test_non_green_sector_yellow_then_clear():
-    rc = pd.DataFrame([rc_row(10, flag="DOUBLE YELLOW", scope="Sector", sector=13),
-                       rc_row(20, flag="CLEAR", scope="Sector", sector=13)])
-    (a, b), = o.non_green_intervals(rc)
+    rc = pd.DataFrame(
+        [
+            rc_row(10, flag="DOUBLE YELLOW", scope="Sector", sector=13),
+            rc_row(20, flag="CLEAR", scope="Sector", sector=13),
+        ]
+    )
+    ((a, b),) = o.non_green_intervals(rc)
     assert b - a == pytest.approx(10)
 
 
 def test_non_green_red_closed_by_track_clear_and_open_ended_yellow():
-    rc = pd.DataFrame([rc_row(5, flag="RED", scope="Track"),
-                       rc_row(30, flag="CLEAR", scope="Track"),
-                       rc_row(40, flag="YELLOW", scope="Sector", sector=2)])
+    rc = pd.DataFrame(
+        [
+            rc_row(5, flag="RED", scope="Track"),
+            rc_row(30, flag="CLEAR", scope="Track"),
+            rc_row(40, flag="YELLOW", scope="Sector", sector=2),
+        ]
+    )
     iv = sorted(o.non_green_intervals(rc))
     assert iv[0][1] - iv[0][0] == pytest.approx(25)
     assert iv[1][1] == float("inf")
 
 
 def test_non_green_safety_car():
-    rc = pd.DataFrame([rc_row(5, "SafetyCar", message="SAFETY CAR DEPLOYED"),
-                       rc_row(50, "SafetyCar", message="SAFETY CAR IN THIS LAP")])
-    (a, b), = o.non_green_intervals(rc)
+    rc = pd.DataFrame(
+        [
+            rc_row(5, "SafetyCar", message="SAFETY CAR DEPLOYED"),
+            rc_row(50, "SafetyCar", message="SAFETY CAR IN THIS LAP"),
+        ]
+    )
+    ((a, b),) = o.non_green_intervals(rc)
     assert b - a == pytest.approx(45)
 
 
 def _laps():
     # VER: lap1 out-lap, lap2 flying (deleted, yellow overlaps), lap3 in-lap-ish; NOR lap1 clean
-    return pd.DataFrame([
-        dict(driver_number=1, lap_number=1, date_start=ts(0), lap_duration=90.0, duration_sector_1=30.0,
-             duration_sector_2=30.0, duration_sector_3=30.0, is_pit_out_lap=True),
-        dict(driver_number=1, lap_number=2, date_start=ts(90), lap_duration=70.0, duration_sector_1=20.0,
-             duration_sector_2=30.0, duration_sector_3=20.0, is_pit_out_lap=False),
-        dict(driver_number=1, lap_number=3, date_start=ts(160), lap_duration=None, duration_sector_1=None,
-             duration_sector_2=None, duration_sector_3=None, is_pit_out_lap=False),
-        dict(driver_number=1, lap_number=4, date_start=None, lap_duration=None, duration_sector_1=None,
-             duration_sector_2=None, duration_sector_3=None, is_pit_out_lap=True),
-        dict(driver_number=4, lap_number=1, date_start=ts(0), lap_duration=69.9, duration_sector_1=20.0,
-             duration_sector_2=30.0, duration_sector_3=19.9, is_pit_out_lap=False),
-    ])
+    return pd.DataFrame(
+        [
+            dict(
+                driver_number=1,
+                lap_number=1,
+                date_start=ts(0),
+                lap_duration=90.0,
+                duration_sector_1=30.0,
+                duration_sector_2=30.0,
+                duration_sector_3=30.0,
+                is_pit_out_lap=True,
+            ),
+            dict(
+                driver_number=1,
+                lap_number=2,
+                date_start=ts(90),
+                lap_duration=70.0,
+                duration_sector_1=20.0,
+                duration_sector_2=30.0,
+                duration_sector_3=20.0,
+                is_pit_out_lap=False,
+            ),
+            dict(
+                driver_number=1,
+                lap_number=3,
+                date_start=ts(160),
+                lap_duration=None,
+                duration_sector_1=None,
+                duration_sector_2=None,
+                duration_sector_3=None,
+                is_pit_out_lap=False,
+            ),
+            dict(
+                driver_number=1,
+                lap_number=4,
+                date_start=None,
+                lap_duration=None,
+                duration_sector_1=None,
+                duration_sector_2=None,
+                duration_sector_3=None,
+                is_pit_out_lap=True,
+            ),
+            dict(
+                driver_number=4,
+                lap_number=1,
+                date_start=ts(0),
+                lap_duration=69.9,
+                duration_sector_1=20.0,
+                duration_sector_2=30.0,
+                duration_sector_3=19.9,
+                is_pit_out_lap=False,
+            ),
+        ]
+    )
 
 
-STINTS = pd.DataFrame([dict(driver_number=1, stint_number=1, lap_start=1, lap_end=2, compound="SOFT", tyre_age_at_start=0),
-                       dict(driver_number=1, stint_number=2, lap_start=3, lap_end=4, compound="MEDIUM", tyre_age_at_start=2),
-                       dict(driver_number=4, stint_number=1, lap_start=1, lap_end=1, compound="SOFT", tyre_age_at_start=0)])
+STINTS = pd.DataFrame(
+    [
+        dict(
+            driver_number=1,
+            stint_number=1,
+            lap_start=1,
+            lap_end=2,
+            compound="SOFT",
+            tyre_age_at_start=0,
+        ),
+        dict(
+            driver_number=1,
+            stint_number=2,
+            lap_start=3,
+            lap_end=4,
+            compound="MEDIUM",
+            tyre_age_at_start=2,
+        ),
+        dict(
+            driver_number=4,
+            stint_number=1,
+            lap_start=1,
+            lap_end=1,
+            compound="SOFT",
+            tyre_age_at_start=0,
+        ),
+    ]
+)
 
-RC = pd.DataFrame([
-    rc_row(100, flag="YELLOW", scope="Sector", sector=3), rc_row(110, flag="CLEAR", scope="Sector", sector=3),
-    rc_row(120, "Other", message="CAR 1 (VER) TIME 1:10.000 DELETED - TRACK LIMITS AT TURN 1 LAP 2 14:00:00"),
-])
+RC = pd.DataFrame(
+    [
+        rc_row(100, flag="YELLOW", scope="Sector", sector=3),
+        rc_row(110, flag="CLEAR", scope="Sector", sector=3),
+        rc_row(
+            120,
+            "Other",
+            message="CAR 1 (VER) TIME 1:10.000 DELETED - TRACK LIMITS AT TURN 1 LAP 2 14:00:00",
+        ),
+    ]
+)
 
 
 @pytest.fixture
@@ -108,8 +211,14 @@ def test_map_laps_deleted_and_green(laps):
 
 def test_map_laps_tyres(laps):
     ver = laps[laps.driver == "VER"].set_index("lap_number")
-    assert ver.loc[1, "compound"] == "SOFT" and ver.loc[1, "tyre_age"] == 1 and ver.loc[2, "tyre_age"] == 2
-    assert ver.loc[3, "compound"] == "MEDIUM" and ver.loc[3, "tyre_age"] == 3  # 2 laps old at start -> 3rd lap
+    assert (
+        ver.loc[1, "compound"] == "SOFT"
+        and ver.loc[1, "tyre_age"] == 1
+        and ver.loc[2, "tyre_age"] == 2
+    )
+    assert (
+        ver.loc[3, "compound"] == "MEDIUM" and ver.loc[3, "tyre_age"] == 3
+    )  # 2 laps old at start -> 3rd lap
     assert ver.loc[4, "stint"] == 2
 
 
@@ -119,8 +228,16 @@ def test_map_laps_empty():
 
 
 def _samples(start_sec, n, dt=0.27, speed0=100):
-    return pd.DataFrame(dict(date=[ts(start_sec + i * dt) for i in range(n)], speed=[speed0 + i for i in range(n)],
-                             throttle=[100] * n, brake=[0] * (n - 1) + [100], n_gear=[5] * n, rpm=[10000] * n))
+    return pd.DataFrame(
+        dict(
+            date=[ts(start_sec + i * dt) for i in range(n)],
+            speed=[speed0 + i for i in range(n)],
+            throttle=[100] * n,
+            brake=[0] * (n - 1) + [100],
+            n_gear=[5] * n,
+            rpm=[10000] * n,
+        )
+    )
 
 
 def test_car_data_sliced_per_lap_with_lap_relative_time():
@@ -142,8 +259,12 @@ def test_car_data_empty_driver_ignored():
 
 
 def test_weather_and_race_control_use_utc_epoch():
-    w = pd.DataFrame([dict(date=ts(0), air_temperature=21.0, track_temperature=40.0, rainfall=0),
-                      dict(date=ts(60), air_temperature=21.5, track_temperature=39.0, rainfall=1)])
+    w = pd.DataFrame(
+        [
+            dict(date=ts(0), air_temperature=21.0, track_temperature=40.0, rainfall=0),
+            dict(date=ts(60), air_temperature=21.5, track_temperature=39.0, rainfall=1),
+        ]
+    )
     out = o.map_weather(w, 2025, "e", "s")
     assert list(out.columns) == WEATHER_COLS
     assert out["t_s"].iloc[0] == pytest.approx(epoch_s(pd.Series([T0])).iloc[0])

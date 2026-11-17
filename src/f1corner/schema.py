@@ -9,6 +9,7 @@ Conventions (identical for every backend):
 - car_data.t_s, location.t_s = seconds since the start of that lap.
 - brake = bool; throttle in percent; speed in km/h.
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -18,17 +19,35 @@ SESSION_KEYS = ["season", "event", "session"]
 SESSIONS_COLS = ["season", "event", "session", "round", "date", "circuit"]
 
 LAPS_COLS = [
-    *SESSION_KEYS, "driver", "team", "lap_number",
-    "lap_start_s", "lap_time_s", "s1_s", "s2_s", "s3_s",
-    "pit_in", "pit_out", "compound", "tyre_age", "stint",
-    "deleted",        # bool | NA: stewards deleted lap
-    "green",          # bool | NA: green flag whole lap (no yellow/SC/VSC)
+    *SESSION_KEYS,
+    "driver",
+    "team",
+    "lap_number",
+    "lap_start_s",
+    "lap_time_s",
+    "s1_s",
+    "s2_s",
+    "s3_s",
+    "pit_in",
+    "pit_out",
+    "compound",
+    "tyre_age",
+    "stint",
+    "deleted",  # bool | NA: stewards deleted lap
+    "green",  # bool | NA: green flag whole lap (no yellow/SC/VSC)
     "source_accurate",  # bool | NA: FastF1 IsAccurate if available; cross-check only
 ]
 
 CAR_DATA_COLS = [
-    *SESSION_KEYS, "driver", "lap_number",
-    "t_s", "speed_kph", "throttle", "brake", "gear", "rpm",
+    *SESSION_KEYS,
+    "driver",
+    "lap_number",
+    "t_s",
+    "speed_kph",
+    "throttle",
+    "brake",
+    "gear",
+    "rpm",
 ]
 
 LOCATION_COLS = [*SESSION_KEYS, "driver", "lap_number", "t_s", "x", "y", "z"]

@@ -21,14 +21,31 @@ Check with `uv --version`. Python 3.14+ is required; uv will download it if miss
 `uv.lock` pins exact versions. Commit it.
 
 ```sh
-uv sync --locked            # core deps only (OpenF1 backend), fails if lock is out of date
+uv sync --locked            # core + dev tools (OpenF1 backend), fails if lock is out of date
 uv sync --locked --extra fastf1   # + optional FastF1 backend
-uv sync --locked --extra dev      # + pytest
 ```
 
-Use `--extra` multiple times to combine. After editing `pyproject.toml`, refresh the lock with `uv lock`, then `uv sync`.
+Dev tools (pytest, ruff, pre-commit, poethepoet) live in the `dev` dependency group, which `uv sync` installs by default; skip with `--no-dev`. Use `--extra` multiple times to combine extras. After editing `pyproject.toml`, refresh the lock with `uv lock`, then `uv sync`.
 
 Run things in the env with `uv run`, e.g. `uv run pytest`.
+
+## Linting, formatting, hooks
+
+Ruff handles both linting and formatting (its formatter is black-compatible, so black is not used). Tasks run via [poethepoet](https://poethepoe.natn.io/):
+
+```sh
+uv run poe fix     # ruff check --fix + ruff format (auto-fix everything)
+uv run poe check   # same checks, no changes (what CI would run)
+```
+
+Pre-commit runs ruff check, ruff format and the unit tests on every commit. Enable it once per clone:
+
+```sh
+uv sync --all-extras
+uv run pre-commit install
+```
+
+A failed hook aborts the commit; auto-fixes are left unstaged, so review, `git add`, and commit again. Run all hooks manually with `uv run pre-commit run --all-files`.
 
 ## Ingestion layer
 
@@ -60,7 +77,7 @@ sources/fastf1_source.py    optional backend (F1TV subscription)
 from f1corner.sources import get_source
 from f1corner import cache
 
-src = get_source("fastf1")   # or "openf1"
+src = get_source("fastf1")  # or "openf1"
 cache.fetch(src, "laps", 2025, "Monaco Grand Prix", "Qualifying")
 laps = cache.load("fastf1", "laps", 2025, "Monaco Grand Prix", "Qualifying")
 ```
