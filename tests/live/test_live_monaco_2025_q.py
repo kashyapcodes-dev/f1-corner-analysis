@@ -69,10 +69,11 @@ def test_sectors_sum_to_lap_time_on_pole_lap(tables):
 
 
 def test_known_deleted_laps_flagged(tables):
-    """Race control: GAS lap 4 (1:38.777) and RUS lap 6 (1:33.247) deleted for track limits."""
+    """Race control: GAS 1:38.777 (lap 3) and RUS 1:33.247 (lap 5) deleted for track limits.
+    Message \"LAP n\" is the lap in progress when issued, so the deleted lap is n-1."""
     _, t = tables
     d = t["laps"].set_index(["driver", "lap_number"])["deleted"]
-    assert d[("GAS", 4)] and d[("RUS", 6)]
+    assert d[("GAS", 3)] and d[("RUS", 5)]
     assert not d[("NOR", 26)]
     assert t["laps"]["deleted"].fillna(False).astype(bool).sum() >= 10
 

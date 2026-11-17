@@ -18,6 +18,7 @@ from ..timeutil import epoch_s
 BASE = "https://api.openf1.org/v1"
 
 _DELETED = re.compile(r"CAR (\d+) \((\w+)\).*\bDELETED\b.*\bLAP (\d+)\b")
+_DELETED_TIMED = re.compile(r"CAR \d+ \((\w+)\) TIME (\d):(\d\d\.\d{3}) DELETED")
 _YELLOWS = {"YELLOW", "DOUBLE YELLOW"}
 
 
@@ -82,12 +83,27 @@ def non_green_intervals(rc: pd.DataFrame) -> list[tuple[float, float]]:
 
 
 def deleted_laps(rc: pd.DataFrame) -> set[tuple[str, int]]:
-    """(driver_acronym, lap_number) pairs the stewards deleted."""
+    """(driver_acronym, lap_number) for untimed "LAP DELETED" messages (timed ones: see deleted_times)."""
     found = set()
     for m in rc.get("message", pd.Series(dtype=str)).dropna():
+        if _DELETED_TIMED.match(m):
+            continue
         g = _DELETED.search(m)
         if g:
             found.add((g.group(2), int(g.group(3))))
+    return found
+
+
+def deleted_times(rc: pd.DataFrame) -> set[tuple[str, int]]:
+    """(driver_acronym, lap_time_ms) for messages naming the deleted lap's time.
+
+    The message's "LAP n" is the lap in progress when issued (usually the lap after), so time is authoritative.
+    """
+    found = set()
+    for m in rc.get("message", pd.Series(dtype=str)).dropna():
+        g = _DELETED_TIMED.match(m)
+        if g:
+            found.add((g.group(1), round((int(g.group(2)) * 60 + float(g.group(3))) * 1000)))
     return found
 
 
@@ -109,8 +125,11 @@ def map_laps(laps, drivers, stints, rc, season, event, session) -> pd.DataFrame:
     pit_out = df["is_pit_out_lap"].fillna(False).astype(bool)
     pit_in = pit_out.groupby(df["driver_number"]).shift(-1, fill_value=False).astype(bool)
 
-    deleted = deleted_laps(rc)
-    is_deleted = [(d, n) in deleted for d, n in zip(df["driver"], df["lap_number"])]
+    by_time = deleted_times(rc)
+    by_lap = deleted_laps(rc)
+    ms = (df["lap_duration"] * 1000).round()
+    is_deleted = [(d, n) in by_lap or (d, t) in by_time
+                  for d, n, t in zip(df["driver"], df["lap_number"], ms)]
 
     ivals = non_green_intervals(rc)
     green = []

@@ -27,7 +27,8 @@ def test_deleted_laps_parses_both_message_forms():
         rc_row(2, "Other", message="CAR 31 (OCO) LAP DELETED - TRACK LIMITS AT TURN 10 LAP 14 16:18:11 (PIT)"),
         rc_row(3, "Other", message="RISK OF RAIN FOR F1 QUALIFYING SESSION IS 20%"),
     ])
-    assert o.deleted_laps(rc) == {("GAS", 4), ("OCO", 14)}
+    assert o.deleted_laps(rc) == {("OCO", 14)}
+    assert o.deleted_times(rc) == {("GAS", 98777)}
 
 
 def test_non_green_sector_yellow_then_clear():
