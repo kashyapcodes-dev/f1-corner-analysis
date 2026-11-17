@@ -56,7 +56,32 @@ WEATHER_COLS = [*SESSION_KEYS, "t_s", "air_temp_c", "track_temp_c", "rain"]
 
 RACE_CONTROL_COLS = [*SESSION_KEYS, "t_s", "category", "message", "driver"]
 
+# Jolpica (Ergast-compatible): full-season calendar, one row per session.
+SCHEDULE_COLS = [*SESSIONS_COLS, "circuit_id", "locality", "country"]
+
+# Official results, one row per driver. Race/Sprint fill points..fastest_lap_s; Qualifying fills q1_s..q3_s.
+CLASSIFICATION_COLS = [
+    *SESSION_KEYS,
+    "position",  # int | NA (NA when unclassified, see position_text/status)
+    "position_text",  # "1".."20", "R", "D", "W", ...
+    "driver",
+    "driver_number",
+    "team",
+    "grid",
+    "laps",
+    "status",
+    "time_s",  # race: total time (s) from millis; NA if not on lead lap
+    "points",
+    "fastest_lap_rank",
+    "fastest_lap_s",
+    "q1_s",
+    "q2_s",
+    "q3_s",
+]
+
 TABLES = {
+    "schedule": SCHEDULE_COLS,
+    "classification": CLASSIFICATION_COLS,
     "sessions": SESSIONS_COLS,
     "laps": LAPS_COLS,
     "car_data": CAR_DATA_COLS,
