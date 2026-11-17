@@ -110,6 +110,11 @@ Without it, `FastF1Source` raises `SourceUnavailable` with this hint and everyth
 
 Conventions: `lap_start_s`, weather and race-control `t_s` are UTC epoch seconds; car data and location `t_s` are seconds since lap start.
 
+## Corner features and clustering
+
+- `features.py`: per corner from the pole lap: min speed (parabola-interpolated), speed loss, time off full throttle, min gear.
+- `cluster.py`: z-scored features, GMM with k in 2..8 chosen by BIC (k-means + silhouette as checks), clusters named by median min speed, bootstrap-over-races stability (ARI, stable if mean >= 0.7). 2025 fit is frozen (`fit`/`assign`, Test A reference); 2026 is re-clustered and `compare_labels` counts corners that changed class.
+
 ## Tests
 
 ```sh
