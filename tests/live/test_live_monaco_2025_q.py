@@ -154,3 +154,43 @@ def test_openf1_and_fastf1_agree():
     cb = _load("fastf1", "car_data").query("driver == 'NOR' and lap_number == 26")
     assert abs(ca["speed_kph"].max() - cb["speed_kph"].max()) < 5
     assert abs(len(ca) - len(cb)) < 15
+
+
+# ---- lap filter + corners (OpenF1 only; cached data) --------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def openf1_tables():
+    return {t: _load("openf1", t) for t in ALL_TABLES}
+
+
+def test_lap_filter_monaco_quali(openf1_tables):
+    from f1corner.lapfilter import filter_laps, pole_lap
+
+    r = filter_laps(openf1_tables["laps"], qualifying=True)
+    assert not r.wet_session
+    assert len(r.kept) == 20  # one best valid lap per driver
+    assert r.reasons[["pit", "deleted", "slow"]].gt(0).all()
+    p = pole_lap(r.kept)
+    assert (p["driver"], p["lap_number"]) == ("NOR", 26)
+    assert "STR" in set(r.car_flags["driver"])  # >1% off ALO
+
+
+def test_corners_monaco_pole_and_labels(openf1_tables):
+    from f1corner import multiviewer
+    from f1corner.corners import find_apexes, lap_profile, xy_at
+
+    q = "driver == 'NOR' and lap_number == 26"
+    car, loc = openf1_tables["car_data"].query(q), openf1_tables["location"].query(q)
+    ref = lap_profile(car)
+    assert 3000 < ref.length < 3600  # Monaco ~3.34 km
+    corners, flat = find_apexes(ref)
+    assert 8 <= len(corners) <= 19
+    assert corners["apex_speed_kph"].min() < 60  # Loews hairpin
+    assert (corners["start_m"] <= corners["apex_m"]).all()
+    assert (corners["apex_m"] <= corners["end_m"]).all()
+    assert corners["in_sequence"].any()
+    x, y = xy_at(car, loc, corners["apex_m"].to_numpy(), None)
+    mv = multiviewer.fetch_corners(22, 2025, root=LIVE_CACHE / "multiviewer")
+    labels = multiviewer.label_corners(x, y, mv)
+    assert len(mv) == 19 and None not in labels
