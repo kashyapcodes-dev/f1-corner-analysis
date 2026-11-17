@@ -1,0 +1,14 @@
+notes.txt
+
+.env
+.idea/
+.venv/
+__pycache__/
+*.pyc
+
+# Licensing: raw/cached F1 timing data (FastF1 = F1TV personal-use) must never be committed.
+data/raw/
+data/cache/
+.fastf1-cache/
+*.parquet
+!data/published/**/*.parquet

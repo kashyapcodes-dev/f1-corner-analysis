@@ -1,0 +1,237 @@
+F1 Corner DNA: Design Spec
+Nov 16, 2026 · @Kashyap
+Overview
+We classify every F1 corner from open telemetry, measure each team's strength by corner type, and test whether that strength carries forward and predicts qualifying and race results before they happen. The thesis: old-school, explainable ML still works — clustering and ridge regression, no LLMs.
+The work answers two questions:
+• Test A (across the reset): Does a team's corner-type strength in 2025 survive the 2026 regulation change?
+• Test B (within a season): Does a team's 2026 corner profile from earlier races predict later races? This feeds the prediction model.
+Deliverables: a blog post on kashyap.codes, a YouTube video, an open-source repo, and published predictions scored after each session.
+Goals
+Scope is the full project; there is no deadline. Each goal has a check that says when it's done.
+#
+Goal
+Done when
+G1
+Classify every corner of the 2025 and 2026 calendars from telemetry
+Each apex has a cluster label, the number of clusters is chosen by BIC/silhouette, and the labels are published as a CSV
+G2
+Measure each team's performance in every corner
+% delta to the session's fastest car through each corner segment, from qualifying, for every team and every dry session
+G3
+Split performance into pace and profile
+Each team at each race gets one pace number plus one profile value per corner class
+G4
+Test A: does 2025 profile carry into 2026?
+Rank correlation with bootstrap confidence ranges, reported against 2025 corner labels
+G5
+Test B: does early-2026 profile predict late-2026?
+First-half vs second-half correlation, plus how many corners changed class between 2025 and 2026
+G6
+Predict qualifying
+Gap to pole in % for each team, then each driver, tested in calendar order, beating the "last race order" baseline
+G7
+Predict race pace
+The same model trained on long-run stint pace, with fuel and tyre corrections
+G8
+Make live predictions
+Predictions published before each session, then scored and logged in public
+G9
+Back every claim with a source
+Every number in the post traces to code in the repo or to a cited source
+G10
+Compare old-school models with each other
+Ridge vs gradient boosting, with the simpler one kept unless the other clearly wins
+Non-goals
+• No LLMs or zero-shot classifiers (Jev, Simple Jev and the like). The thesis is that classical ML is enough.
+• No redistribution of F1TV-licensed data. FastF1 (F1TV Access subscription, personal use) is used locally to improve results and content, but its raw or cached data is never committed or published. The project must also run end to end on open sources only (OpenF1). Where a gap exists, the post states it rather than filling it.
+• No betting or gambling advice. Predictions are published as analysis, with error bars.
+• No predictions during a session. Predictions are made before the session starts and never updated while it runs.
+• No modelling of race events: safety cars, crashes, DNFs, pit strategy and weather changes are excluded. Race prediction covers clean-air pace only.
+• No physics or aero modelling. We measure what the car does, not why it does it.
+• No claims about car design. "Weak in high-speed corners" describes results, not downforce figures.
+• No hand-tuned driver ratings. Driver effects come only from data (the teammate comparison).
+Data sources
+FastF1 is the primary source for our own runs: the author has an F1TV subscription (required since v3.9.0), and FastF1 gives built-in lap flags, no rate limits, and history from 2018. OpenF1 is the open, reproducible backend that anyone can run without a subscription. Both come from the same live timing feed, so telemetry resolution is the same (about 3.7 Hz). Both backends write the same canonical tables (src/f1corner/schema.py), and all lap filtering and analysis runs on those tables, so FastF1 is never a requirement for other users.
+Source
+Used for
+Access
+Limits
+OpenF1
+Car telemetry (speed, throttle, brake, gear, RPM), location, laps, stints, weather
+Free Community tier with no sign-in; live data costs €9.90/month
+History starts in 2023. Telemetry is sampled at 3.7 Hz. Limited to 3 requests per second and 30 per minute. Licensed for personal use
+Jolpica-F1
+Results, qualifying classification, schedule (the successor to Ergast)
+Free and open source (Apache-2.0), with downloadable database dumps
+Run by volunteers, so we cache everything locally
+FastF1
+Cross-checking lap flags and timing
+Open-source library, but its data needs an F1TV subscription (personal use; do not redistribute)
+Primary for the author's runs (extra history, no rate limits). Optional for everyone else: install with the 'fastf1' extra. The project must still run without it
+FastF1 CircuitInfo (MultiViewer)
+Official corner numbers (for example "2A") and track map rotation
+Through FastF1
+Entered by hand and "not highly accurate." Used for labels only, never for corner positions
+FIA event documents
+Session reports, deleted laps, car issues, penalties
+Public PDFs
+Read by hand to check the few outlier laps
+What this means for the design:
+• We find corners ourselves from telemetry, as dips in speed along the lap. MultiViewer's corner numbers are only matched to them for labelling. That way every corner position can be traced back to data.
+• The 3.7 Hz sampling rate is the biggest limit on accuracy. At 300 km/h that's about 22 m between samples, so minimum speeds are estimated by fitting a curve between samples, and time through a corner is measured between interpolated distance points.
+• Lap flags: FastF1 defines IsAccurate as "not an in-lap or out-lap, green or yellow flag, sectors sum to the lap time" (timing docs), and Deleted and TrackStatus are also available. When we work from OpenF1 alone, we rebuild the same rules ourselves.
+Design
+The pipeline turns raw telemetry into a corner label, a pace number and a profile per team, then feeds those into a model tested strictly in calendar order. Every stage writes a versioned file, so any chart in the post can be rebuilt from a single command.
+Corner labels and corner deltas meet at pace + profile; that one table feeds both the tests and the model.
+1. Collecting and caching data
+• Pull car data, location and laps for every 2025 and 2026 qualifying session (and 2018-2024 with FastF1 for extra training data), plus race stints and laps for G7, through a Source backend (FastF1 or OpenF1). The OpenF1 backend has a request throttle.
+• Pull the Jolpica classification and schedule. Store everything as Parquet files, partitioned by source, table, season, event and session, under data/raw (gitignored). No analysis code ever calls the API directly.
+• Record the time of each pull and the API version in a manifest file, so the dataset can be cited.
+2. Lap filtering
+A lap is kept only if it passes every rule below. Each rule records why a lap was dropped, so the post can report how many laps were removed and for what reason.
+1.  Not an in-lap or out-lap: no pit entry or exit during the lap.
+2.  Green flag throughout. Yellow flags are dropped too, since drivers lift under them.
+3.  Not deleted by the stewards (from race control messages).
+4.  Sector times add up to the lap time.
+5.  Within 102% of that driver's best lap in the session.
+6.  Dry session only. A session with any intermediate or wet tyre use is excluded from the whole analysis.
+7.  Car issue check: a driver more than 1% slower than their teammate is flagged and checked by hand against FIA documents.
+For qualifying we keep each driver's single best valid lap.
+3. Finding and segmenting corners
+• Reference lap: for each session, use the pole lap. Smooth its speed trace and convert time to distance by integrating speed, then match all other laps to it by track position.
+• Corner = apex: a local speed minimum that's prominent enough (a minimum speed drop that we tune once and then freeze), or a measurable throttle lift. Corners taken completely flat out are excluded and listed in the post.
+• Segment for each corner: from where the reference car starts braking (or lifting) to where it's back on full throttle. These distance markers are fixed per session and applied to every car.
+• Sequences: apexes whose segments overlap or touch are flagged as a sequence (for example, Maggotts–Becketts). Each apex is still its own corner.
+• Labels: match each apex to the nearest MultiViewer corner number for readability.
+4. Corner features and clustering
+Features, all taken from the pole lap and standardised:
+Feature
+Meaning
+Unit
+Minimum speed
+Apex speed, interpolated between samples
+km/h
+Speed loss
+Entry speed minus minimum speed
+km/h
+Time off full throttle
+Time from lift to full throttle again
+s
+Minimum gear
+Lowest gear selected
+gear
+• Model: a Gaussian mixture, with k-means run as a check. The number of clusters is chosen from 2 to 8 by BIC and checked with silhouette scores. Clusters are named by their median minimum speed (for example, "slow hairpin", "fast sweep").
+• Stability: re-cluster on resampled races. A label only counts if the clusters agree (adjusted Rand index reported).
+• Two label sets: 2025 labels are fixed as the reference for Test A, and 2026 is re-clustered separately. The post reports how many corners changed class between the two.
+5. Performance in each corner
+For team t, corner c, race r, take the better of the two teammates' times through the segment, then express it as the percentage over the fastest car in that corner:
+\Delta_{t,c,r} = 100 \times \frac{T_{t,c,r} - \min_{t'} T_{t',c,r}}{\min_{t'} T_{t',c,r}}
+6. Splitting pace and profile
+• Pace = the team's median Δ across all corners at that race.
+• Profile for class k = the average of (Δ − pace) over corners in class k. A negative number means the team is stronger than its own average in that type of corner.
+• Track mix for class k at race r = the share of the pole lap's time spent in class-k corners.
+7. Tests A and B
+• Test A: for each corner class, take the rank correlation (Spearman) between each team's 2025 season profile and its 2026 season profile, using 2025 labels. Report bootstrap confidence ranges (resampling races) and a permutation test as the null. Audi counts as the continuation of Sauber. Cadillac is excluded from this test.
+• Test B: the same correlation between the first and second halves of the 2026 season. A rolling version shows how quickly profiles drift as upgrades arrive.
+• With about 10 teams, the confidence ranges will be wide. The post says so up front.
+8. Prediction model
+• Target: each team's gap to pole in qualifying, in %. Driver level: the team prediction plus a driver offset from the teammate gap so far, pulled toward zero when there are only a few races of evidence.
+• Inputs: recent pace (weighted toward recent races), each profile class × that track's mix, and track conditions (air and track temperature, altitude).
+• Models: ridge regression first, then gradient boosting (LightGBM). The simpler model stays unless the other wins clearly on the test set.
+• Race pace (G7): the target is the clean-air long-run pace from stints, corrected for fuel and tyre age using factors estimated from the data. Laps in traffic are dropped using gap data.
+9. Validation
+• Calendar order only: to predict race N, train only on races 1 to N−1. Never shuffle the data randomly.
+• Metrics: average error in % gap, rank correlation with the real grid, top-3 hit rate, and the pole hit rate.
+• Baselines to beat: the previous race's order, and the season-average pace.
+• Live log: each prediction is committed to the repo with a timestamp before the session, then scored after it.
+10. Robustness checks
+Check
+Default
+Alternative
+Track improvement
+Each driver's best lap
+Correct for the measured improvement between Q1, Q2 and Q3, or use Q1 laps only
+Teammate rule
+Better teammate per corner
+Average of the two teammates
+Clustering method
+Gaussian mixture
+k-means; and k ± 1 clusters
+Corner metric
+Time through the segment
+Minimum speed
+Pace number
+Median Δ
+Mean, weighted by segment time
+If a headline result changes under any of these alternatives, the post reports that change.
+Edge cases and risks
+Risk
+Effect
+Mitigation
+3.7 Hz sampling misses the true apex
+Minimum speed is biased low or noisy
+Use time through the segment as the main metric; fit a curve to estimate the minimum; report the errors
+Only about 10–11 teams
+Wide confidence ranges in Tests A and B
+Bootstrap, permutation tests, and honest wording in the post
+Teams renamed or new in 2026
+Breaks the 2025→26 comparison
+Audi continues Sauber's data; Cadillac only appears in Test B and the model
+Track changes, new venues or a resurfaced track
+Corners don't match across years
+Match corners by position; a corner that moves by more than a set distance is dropped from Test A
+Wet or mixed qualifying
+Corner times aren't comparable
+The whole session is excluded
+Mid-season upgrades
+Profile drifts, weakening Test B
+Rolling windows with more weight on recent races; drift is reported as a finding
+Car issues on a driver's best lap
+Pulls the team's numbers down
+Better-teammate rule plus the 1% teammate check
+Track improvement favours Q3 cars
+Weaker teams look slower than they are
+Robustness check 1
+OpenF1 is licensed for personal use
+Blog or YouTube use may break the terms
+Open question below. Confirm before publishing
+An API goes offline or changes
+Pipeline breaks or results change
+Local Parquet cache plus a manifest file; publish the processed dataset if the licence allows
+Overfitting with little data
+Good test scores that don't hold live
+Ridge first, calendar-order testing, live scoring
+Content plan
+The blog post carries the method and the evidence, and the video carries the story. Both end on a live prediction scored in public.
+Blog post (kashyap.codes), in this order:
+1.  The hook: can a car's corner "DNA" predict qualifying before it happens?
+2.  Data: OpenF1, what 3.7 Hz really means, and the FastF1 paywall change.
+3.  Classifying corners: a track map coloured by cluster, plus the BIC chart.
+4.  Pace vs profile, explained with one team as the example.
+5.  Test A result: does 2025 carry into 2026?
+6.  Test B result, plus how many corners changed class.
+7.  The model, compared with the baselines, and its calendar-order test results.
+8.  The live prediction table, with the error bars shown.
+9.  Limits, robustness checks, and a link to the repo and dataset.
+YouTube video:
+• Open on the prediction, made before the session.
+• Middle: what defines each corner type and team, shown with visuals: the track map, team "fingerprint" radar charts, and before-and-after comparisons.
+• A recurring line: "no LLM needed."
+• End on the reveal: how the prediction scored, whether it was right or wrong.
+Repo: a public GitHub repo with the pipeline, the processed dataset (if the licence allows), and a predictions log with timestamps for every commit.
+Open questions
+[ ] Does OpenF1's personal-use licence cover a monetised blog or YouTube channel? If not, consider the Sponsor tier or written permission.
+[x] F1TV Access: decided, yes. FastF1 is the primary source for the author's runs; OpenF1 stays the open default for others.
+[ ] What derived data can be published? Corner labels CSV and per-team pace/profile are likely fine, but raw telemetry and per-lap times are not. Confirm against F1 / F1TV terms.
+[ ] Do FastF1-only years (2018-2024) change any headline result vs 2025-26 alone? Report both if so.
+[ ] Should the minimum speed drop that defines a corner be set once across all tracks, or tuned per track? Per track is more accurate but harder to defend.
+[ ] Should Audi really be treated as a continuation of Sauber in Test A, or excluded alongside Cadillac?
+[ ] Driver-level predictions: shrink the driver offset toward zero, or toward the teammate's offset from the previous season?
+Sources
+All pages accessed 16 November 2026.
+• FastF1 documentation
+• FastF1: account authentication (F1TV requirement)
+• FastF1: CircuitInfo (MultiViewer corner data)
+• FastF1: timing data (lap columns and flags)
+• OpenF1 (free tier, 3.7 Hz telemetry, 2023 onward)
+• Jolpica-F1 (Ergast-compatible API)

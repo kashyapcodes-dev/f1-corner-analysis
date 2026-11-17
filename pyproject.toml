@@ -1,0 +1,28 @@
+[project]
+name = "f1-corner-analysis"
+version = "0.1.0"
+description = "F1 Corner DNA: classify corners from telemetry, measure team strength by corner type, predict qualifying."
+requires-python = ">=3.14"
+dependencies = [
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "httpx",
+]
+
+[project.optional-dependencies]
+# Optional: richer/longer history (2018+), no rate limits. Needs F1TV Access subscription.
+fastf1 = ["fastf1>=3.9"]
+dev = ["pytest"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/f1corner"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+markers = ["live: hits real APIs (OpenF1; FastF1 also needs F1TV creds). Run with: pytest tests/live"]
+pythonpath = ["src"]
