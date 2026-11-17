@@ -3,6 +3,7 @@
 HTTP lives in OpenF1Source; payload -> canonical mapping lives in pure functions
 (map_*) so it can be unit-tested without network.
 """
+
 from __future__ import annotations
 
 import re
@@ -115,7 +116,11 @@ def map_laps(laps, drivers, stints, rc, season, event, session) -> pd.DataFrame:
     df = laps.sort_values(["driver_number", "lap_number"]).reset_index(drop=True).copy()
     df["driver"] = df["driver_number"].map(acr)
     df["team"] = df["driver_number"].map(team)
-    start = epoch_s(df["date_start"]) if df["date_start"].notna().any() else pd.Series(np.nan, index=df.index)
+    start = (
+        epoch_s(df["date_start"])
+        if df["date_start"].notna().any()
+        else pd.Series(np.nan, index=df.index)
+    )
     start = start.where(df["date_start"].notna())
 
     # lap end = start + duration, else next lap's start for the same driver
@@ -128,8 +133,9 @@ def map_laps(laps, drivers, stints, rc, season, event, session) -> pd.DataFrame:
     by_time = deleted_times(rc)
     by_lap = deleted_laps(rc)
     ms = (df["lap_duration"] * 1000).round()
-    is_deleted = [(d, n) in by_lap or (d, t) in by_time
-                  for d, n, t in zip(df["driver"], df["lap_number"], ms)]
+    is_deleted = [
+        (d, n) in by_lap or (d, t) in by_time for d, n, t in zip(df["driver"], df["lap_number"], ms)
+    ]
 
     ivals = non_green_intervals(rc)
     green = []
@@ -143,27 +149,48 @@ def map_laps(laps, drivers, stints, rc, season, event, session) -> pd.DataFrame:
     age = pd.Series(np.nan, index=df.index)
     stint_no = pd.Series(np.nan, index=df.index)
     for st in stints.itertuples():
-        m = (df["driver_number"] == st.driver_number) & df["lap_number"].between(st.lap_start, st.lap_end)
+        m = (df["driver_number"] == st.driver_number) & df["lap_number"].between(
+            st.lap_start, st.lap_end
+        )
         comp[m] = st.compound
-        age[m] = st.tyre_age_at_start + (df.loc[m, "lap_number"] - st.lap_start) + 1  # FastF1 TyreLife is 1-based
+        age[m] = (
+            st.tyre_age_at_start + (df.loc[m, "lap_number"] - st.lap_start) + 1
+        )  # FastF1 TyreLife is 1-based
         stint_no[m] = st.stint_number
 
-    out = pd.DataFrame(dict(
-        **_keys(season, event, session), driver=df["driver"], team=df["team"],
-        lap_number=df["lap_number"], lap_start_s=start, lap_time_s=df["lap_duration"],
-        s1_s=df["duration_sector_1"], s2_s=df["duration_sector_2"], s3_s=df["duration_sector_3"],
-        pit_in=pit_in, pit_out=pit_out, compound=comp, tyre_age=age, stint=stint_no,
-        deleted=is_deleted, green=pd.array(green, dtype="boolean"),
-    ))
+    out = pd.DataFrame(
+        dict(
+            **_keys(season, event, session),
+            driver=df["driver"],
+            team=df["team"],
+            lap_number=df["lap_number"],
+            lap_start_s=start,
+            lap_time_s=df["lap_duration"],
+            s1_s=df["duration_sector_1"],
+            s2_s=df["duration_sector_2"],
+            s3_s=df["duration_sector_3"],
+            pit_in=pit_in,
+            pit_out=pit_out,
+            compound=comp,
+            tyre_age=age,
+            stint=stint_no,
+            deleted=is_deleted,
+            green=pd.array(green, dtype="boolean"),
+        )
+    )
     return conform("laps", out)
 
 
-def _slice_by_lap(samples: pd.DataFrame, laps: pd.DataFrame, driver_number: int, value_cols: dict) -> pd.DataFrame:
+def _slice_by_lap(
+    samples: pd.DataFrame, laps: pd.DataFrame, driver_number: int, value_cols: dict
+) -> pd.DataFrame:
     """Cut a driver's whole-session samples into laps; t_s = seconds since lap start."""
     s = samples.assign(_t=epoch_s(samples["date"])).sort_values("_t")
     t = s["_t"].to_numpy()
     parts = []
-    for r in laps[(laps["driver_number"] == driver_number) & laps["date_start"].notna()].itertuples():
+    for r in laps[
+        (laps["driver_number"] == driver_number) & laps["date_start"].notna()
+    ].itertuples():
         a = epoch_s(pd.Series([r.date_start])).iloc[0]
         b = a + r.lap_duration if pd.notna(r.lap_duration) else np.inf
         i, j = np.searchsorted(t, a, "left"), np.searchsorted(t, b, "left")
@@ -177,14 +204,26 @@ def _slice_by_lap(samples: pd.DataFrame, laps: pd.DataFrame, driver_number: int,
     return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
 
-def map_car_data(samples_by_driver: dict[int, pd.DataFrame], laps, drivers, season, event, session) -> pd.DataFrame:
+def map_car_data(
+    samples_by_driver: dict[int, pd.DataFrame], laps, drivers, season, event, session
+) -> pd.DataFrame:
     acr = drivers.set_index("driver_number")["name_acronym"]
     parts = []
     for num, s in samples_by_driver.items():
         if s.empty:
             continue
-        d = _slice_by_lap(s, laps, num, {"speed": "speed_kph", "throttle": "throttle",
-                                          "brake": "brake", "n_gear": "gear", "rpm": "rpm"})
+        d = _slice_by_lap(
+            s,
+            laps,
+            num,
+            {
+                "speed": "speed_kph",
+                "throttle": "throttle",
+                "brake": "brake",
+                "n_gear": "gear",
+                "rpm": "rpm",
+            },
+        )
         if d.empty:
             continue
         d["brake"] = d["brake"] > 0
@@ -194,7 +233,9 @@ def map_car_data(samples_by_driver: dict[int, pd.DataFrame], laps, drivers, seas
     return conform("car_data", df.assign(**_keys(season, event, session)) if len(df) else df)
 
 
-def map_location(samples_by_driver: dict[int, pd.DataFrame], laps, drivers, season, event, session) -> pd.DataFrame:
+def map_location(
+    samples_by_driver: dict[int, pd.DataFrame], laps, drivers, season, event, session
+) -> pd.DataFrame:
     acr = drivers.set_index("driver_number")["name_acronym"]
     parts = []
     for num, s in samples_by_driver.items():
@@ -212,9 +253,15 @@ def map_location(samples_by_driver: dict[int, pd.DataFrame], laps, drivers, seas
 def map_weather(w: pd.DataFrame, season, event, session) -> pd.DataFrame:
     if w.empty:
         return conform("weather", pd.DataFrame())
-    df = pd.DataFrame(dict(**_keys(season, event, session), t_s=epoch_s(w["date"]),
-                           air_temp_c=w["air_temperature"], track_temp_c=w["track_temperature"],
-                           rain=w["rainfall"] > 0))
+    df = pd.DataFrame(
+        dict(
+            **_keys(season, event, session),
+            t_s=epoch_s(w["date"]),
+            air_temp_c=w["air_temperature"],
+            track_temp_c=w["track_temperature"],
+            rain=w["rainfall"] > 0,
+        )
+    )
     return conform("weather", df)
 
 
@@ -222,9 +269,15 @@ def map_race_control(rc: pd.DataFrame, drivers, season, event, session) -> pd.Da
     if rc.empty:
         return conform("race_control", pd.DataFrame())
     acr = drivers.set_index("driver_number")["name_acronym"]
-    df = pd.DataFrame(dict(**_keys(season, event, session), t_s=epoch_s(rc["date"]),
-                           category=rc["category"], message=rc["message"],
-                           driver=rc["driver_number"].map(acr)))
+    df = pd.DataFrame(
+        dict(
+            **_keys(season, event, session),
+            t_s=epoch_s(rc["date"]),
+            category=rc["category"],
+            message=rc["message"],
+            driver=rc["driver_number"].map(acr),
+        )
+    )
     return conform("race_control", df)
 
 
@@ -246,7 +299,7 @@ class OpenF1Source:
             if r.status_code == 404:  # OpenF1 answers "no results" with 404
                 return pd.DataFrame()
             if r.status_code in (429, 500, 502, 503, 504):
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
                 continue
             r.raise_for_status()
             return pd.DataFrame(r.json())
@@ -264,16 +317,21 @@ class OpenF1Source:
             hit = meets[meets["meeting_name"] == event] if not meets.empty else meets
             if hit.empty:
                 raise LookupError(f"No OpenF1 meeting {season} {event!r}")
-            ses = self._get("sessions", meeting_key=int(hit.iloc[0]["meeting_key"]), session_name=session)
+            ses = self._get(
+                "sessions", meeting_key=int(hit.iloc[0]["meeting_key"]), session_name=session
+            )
             if ses.empty:
                 raise LookupError(f"No OpenF1 session {season} {event!r} {session!r}")
             return int(ses.iloc[0]["session_key"])
+
         return self._memoized(("sk", season, event, session), find)
 
     def _raw(self, endpoint, season, event, session, **extra) -> pd.DataFrame:
         sk = self._session_key(season, event, session)
-        return self._memoized((endpoint, sk, tuple(sorted(extra.items()))),
-                              lambda: self._get(endpoint, session_key=sk, **extra))
+        return self._memoized(
+            (endpoint, sk, tuple(sorted(extra.items()))),
+            lambda: self._get(endpoint, session_key=sk, **extra),
+        )
 
     def sessions(self, season):
         meets = self._get("meetings", year=season)
@@ -281,36 +339,65 @@ class OpenF1Source:
         if ses.empty:
             return conform("sessions", pd.DataFrame())
         name = meets.set_index("meeting_key")["meeting_name"]
-        df = pd.DataFrame(dict(season=season, event=ses["meeting_key"].map(name), session=ses["session_name"],
-                               round=pd.NA, date=ses["date_start"], circuit=ses["circuit_short_name"]))
+        df = pd.DataFrame(
+            dict(
+                season=season,
+                event=ses["meeting_key"].map(name),
+                session=ses["session_name"],
+                round=pd.NA,
+                date=ses["date_start"],
+                circuit=ses["circuit_short_name"],
+            )
+        )
         return conform("sessions", df)
 
     def laps(self, season, event, session):
-        return map_laps(self._raw("laps", season, event, session),
-                        self._raw("drivers", season, event, session),
-                        self._raw("stints", season, event, session),
-                        self._raw("race_control", season, event, session),
-                        season, event, session)
+        return map_laps(
+            self._raw("laps", season, event, session),
+            self._raw("drivers", season, event, session),
+            self._raw("stints", season, event, session),
+            self._raw("race_control", season, event, session),
+            season,
+            event,
+            session,
+        )
 
     def _per_driver(self, endpoint, season, event, session):
         drivers = self._raw("drivers", season, event, session)
         sk = self._session_key(season, event, session)
-        return {int(n): self._get(endpoint, session_key=sk, driver_number=int(n))
-                for n in drivers["driver_number"]}
+        return {
+            int(n): self._get(endpoint, session_key=sk, driver_number=int(n))
+            for n in drivers["driver_number"]
+        }
 
     def car_data(self, season, event, session):
-        return map_car_data(self._per_driver("car_data", season, event, session),
-                            self._raw("laps", season, event, session),
-                            self._raw("drivers", season, event, session), season, event, session)
+        return map_car_data(
+            self._per_driver("car_data", season, event, session),
+            self._raw("laps", season, event, session),
+            self._raw("drivers", season, event, session),
+            season,
+            event,
+            session,
+        )
 
     def location(self, season, event, session):
-        return map_location(self._per_driver("location", season, event, session),
-                            self._raw("laps", season, event, session),
-                            self._raw("drivers", season, event, session), season, event, session)
+        return map_location(
+            self._per_driver("location", season, event, session),
+            self._raw("laps", season, event, session),
+            self._raw("drivers", season, event, session),
+            season,
+            event,
+            session,
+        )
 
     def weather(self, season, event, session):
         return map_weather(self._raw("weather", season, event, session), season, event, session)
 
     def race_control(self, season, event, session):
-        return map_race_control(self._raw("race_control", season, event, session),
-                                self._raw("drivers", season, event, session), season, event, session)
+        return map_race_control(
+            self._raw("race_control", season, event, session),
+            self._raw("drivers", season, event, session),
+            season,
+            event,
+            session,
+        )

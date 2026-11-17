@@ -16,9 +16,11 @@ class FakeSource:
 def test_fetch_partitions_caches_and_writes_manifest(tmp_path):
     src = FakeSource()
     p = cache.fetch(src, "laps", 2025, "Monaco Grand Prix", "Qualifying", root=tmp_path)
-    assert p == tmp_path / "fake/laps/season=2025/event=monaco-grand-prix/session=qualifying.parquet"
+    assert (
+        p == tmp_path / "fake/laps/season=2025/event=monaco-grand-prix/session=qualifying.parquet"
+    )
     cache.fetch(src, "laps", 2025, "Monaco Grand Prix", "Qualifying", root=tmp_path)
-    assert src.calls == 1                      # second call served from cache
+    assert src.calls == 1  # second call served from cache
     df = cache.load("fake", "laps", 2025, "Monaco Grand Prix", "Qualifying", root=tmp_path)
     assert list(df.columns) == LAPS_COLS and df["lap_time_s"].iloc[0] == 69.954
     assert len((tmp_path / "manifest.jsonl").read_text().splitlines()) == 1
