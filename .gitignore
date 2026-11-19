@@ -12,3 +12,5 @@ data/cache/
 .fastf1-cache/
 *.parquet
 !data/published/**/*.parquet
+
+data/derived/

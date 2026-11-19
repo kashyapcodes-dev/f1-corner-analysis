@@ -39,6 +39,19 @@ def _smooth(y: np.ndarray, win: int) -> np.ndarray:
     return np.convolve(pad, np.ones(win) / win, mode="valid")[: len(y)]
 
 
+def distance_axis(
+    car: pd.DataFrame, length: float | None = None
+) -> tuple[pd.DataFrame, np.ndarray]:
+    """Sorted/deduped car samples and their cumulative distance (m), optionally rescaled to `length`."""
+    c = car.sort_values("t_s").drop_duplicates("t_s")
+    t = c["t_s"].to_numpy(float)
+    v = c["speed_kph"].to_numpy(float) / 3.6
+    d = np.concatenate([[0.0], np.cumsum((v[1:] + v[:-1]) / 2 * np.diff(t))])
+    if length is not None and d[-1] > 0:
+        d = d * (length / d[-1])
+    return c, d
+
+
 def lap_profile(car: pd.DataFrame, length: float | None = None) -> Profile:
     """Distance profile for one lap's car_data (t_s, speed_kph, throttle, brake).
 

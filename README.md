@@ -110,6 +110,25 @@ Without it, `FastF1Source` raises `SourceUnavailable` with this hint and everyth
 
 Conventions: `lap_start_s`, weather and race-control `t_s` are UTC epoch seconds; car data and location `t_s` are seconds since lap start.
 
+## Corner features and clustering
+
+- `features.py`: per corner from the pole lap: min speed (parabola-interpolated), speed loss, time off full throttle, min gear.
+- `cluster.py`: z-scored features, GMM with k in 2..8 chosen by BIC (k-means + silhouette as checks), clusters named by median min speed, bootstrap-over-races stability (ARI, stable if mean >= 0.7). 2025 fit is frozen (`fit`/`assign`, Test A reference); 2026 is re-clustered and `compare_labels` counts corners that changed class.
+
+## CLI
+
+`uv run f1 --help`. Selectors: `-s/--season` (repeatable), `-e/--event` (name substring, repeatable; default = every past qualifying session), `--source openf1|fastf1`.
+
+```sh
+uv run f1 events -s 2025                       # calendar + ingested/analyzed status
+uv run f1 ingest -s 2025 -e monaco -e spain    # telemetry + Jolpica classification -> data/raw
+uv run f1 analyze -s 2025                      # corner times/features -> data/derived
+uv run f1 report -s 2025 -s 2026 --robustness  # -> reports/report.md + terminal pace table
+uv run f1 run -s 2025 -e monaco                # all three
+```
+
+Steps skip cached work unless `--force`. Wet sessions are excluded. Tests A/B appear once >= 2 seasons / >= 4 events of the latest season are analyzed; prediction needs a quali gap table and is not wired in yet. Code: `cli.py`, `pipeline.py`, `report.py`.
+
 ## Tests
 
 ```sh
